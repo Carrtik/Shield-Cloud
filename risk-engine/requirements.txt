@@ -1,0 +1,7 @@
+fastapi[standard]
+uvicorn
+redis
+pika
+pybreaker
+httpx
+python-socketio

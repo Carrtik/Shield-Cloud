@@ -1,0 +1,58 @@
+# ShieldCloud Infrastructure-only docker-compose
+
+# ============================================================
+# ShieldCloud Infrastructure Layer ONLY
+# auth-service, encryption-service, celery-worker are run
+# NATIVELY by start.ps1 for hot-reload and easy debugging.
+# This file only manages the stateful infrastructure:
+#   PostgreSQL, MinIO, Redis, RabbitMQ
+# ============================================================
+
+services:
+  postgres:
+    image: postgres:15-alpine
+    environment:
+      POSTGRES_DB: shieldcloud
+      POSTGRES_USER: postgres_user
+      POSTGRES_PASSWORD: postgres_password
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ../scripts/init-db.sql:/docker-entrypoint-initdb.d/init-db.sql
+
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+
+  rabbitmq:
+    image: rabbitmq:3.12-management-alpine
+    environment:
+      RABBITMQ_DEFAULT_USER: guest
+      RABBITMQ_DEFAULT_PASS: guest
+    ports:
+      - "5672:5672"    # AMQP message broker
+      - "15672:15672"  # Management UI  ->  http://localhost:15672  (guest/guest)
+    volumes:
+      - rabbitmq_data:/var/lib/rabbitmq
+
+  minio:
+    image: minio/minio
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: minioadmin
+      MINIO_ROOT_PASSWORD: minioadmin
+    ports:
+      - "9000:9000"   # S3 API
+      - "9001:9001"   # MinIO Console  ->  http://localhost:9001  (minioadmin/minioadmin)
+    volumes:
+      - minio_data:/data
+
+volumes:
+  postgres_data:
+  redis_data:
+  rabbitmq_data:
+  minio_data:

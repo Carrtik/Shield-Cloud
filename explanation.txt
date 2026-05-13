@@ -1,0 +1,155 @@
+# 🛡️ ShieldCloud: Post-Quantum Secure Cloud Storage & AI Self-Healing System
+
+**Comprehensive Presentation Guide**
+
+This document explains **literally everything** you need to know about the architecture, the machine learning models, the quantum cryptography, and the system integrations of the ShieldCloud project. You can use this to build your slides, write your script, and prepare for any Q&A.
+
+---
+
+## 🏗️ 1. Complete System Architecture (The "Big Picture")
+
+ShieldCloud is a modern, microservices-based distributed system built to protect cloud storage from current threats and future quantum computer attacks (Harvest-Now-Decrypt-Later). It uses AI to actively detect threats and "self-heal" by instantly rotating cryptographic keys.
+
+It consists of **8 independent microservices** communicating asynchronously:
+
+1. **Frontend Dashboard (React/Vite)**
+   - **What it does:** The user interface. It provides real-time visualizations using charts (Recharts) and streams WebSocket events to show threat levels instantly.
+   - **Key Feature:** Live Anomaly Detection graph & Secure File Vault UI.
+
+2. **Auth Service (NestJS, Port 3001)**
+   - **What it does:** Handles user login, issues JSON Web Tokens (JWT), and manages sessions. It is your gatekeeper.
+
+3. **Storage Service (NestJS, Port 3003)**
+   - **What it does:** Receives file uploads from the frontend, routes them to be encrypted, and proxies the physical writes to the MinIO cluster.
+
+4. **Encryption Service (FastAPI / liboqs, Port 3002)**
+   - **What it does:** The cryptography heart of the application.
+   - **Key Feature:** Uses a **Hybrid Cryptography approach**: `AES-256-GCM` for bulk file encryption + `CRYSTALS-Kyber (ML-KEM-1024)` to encapsulate and protect the AES key. It handles both encryption on upload, and the heavy lifting of decrypting, generating new keys, and re-encrypting during a self-heal event.
+
+5. **Anomaly ML Service (FastAPI / XGBoost, Port 3004)**
+   - **What it does:** The "Brain" of the threat detection.
+   - **Key Feature:** Runs an optimized Supervised Machine Learning model (XGBoost) against a 20-feature input array to determine the exact probability that an action is an attack, yielding a score from `0.0` to `1.0`.
+
+6. **Risk Engine Service (FastAPI / Python, Port 3005)**
+   - **What it does:** Aggregates the raw ML score with other heuristic contexts (like Exponential Moving Averages of user behavior, API spike rates, Geo-mismatches).
+   - **Key Feature:** Translates numbers into actionable Risk Tiers (`LOW`, `MEDIUM`, `HIGH`, `CRITICAL`) and broadcasts them to the UI via Socket.IO, while pushing `HIGH/CRITICAL` events to RabbitMQ.
+
+7. **Self-Healing Worker (Python Consumer)**
+   - **What it does:** Listens to the RabbitMQ `risk.high` queue.
+   - **Key Feature:** When a critical attack is observed, it issues an HTTP call to the Encryption Service to trigger the massive Key Rotation process autonomously—zero human intervention required.
+
+8. **Infrastructure Layer (Docker Compose)**
+   - **PostgreSQL:** Stores user metadata, file metadata, and vitally, the `kyber_ciphertext` and `encrypted_aes_key`.
+   - **MinIO:** An S3-compatible highly scalable object storage server where the actual locked `.bin` files live.
+   - **RabbitMQ:** The message broker handling pub/sub queues (`user.activity`, `risk.high`) so that if a service crashes, the message isn't lost.
+   - **Redis:** Used for rate limiting and caching.
+
+---
+
+## 🧠 2. Machine Learning & Anomaly Detection Explained
+
+You need to be able to explain *why* and *how* the AI detects threats. We did not use simple `if/else` statements.
+
+### The Problem: Harvest-Now-Decrypt-Later (HNDL)
+Hackers are currently stealing massive amounts of encrypted data. They can't read it today, but they are waiting 5-10 years until Quantum Computers are built. Once built, Shor's Algorithm will crack RSA/ECC instantly, exposing decades of stolen data.
+
+A typical HNDL attack looks like a sudden, massive bulk download (exfiltration) by a user, perhaps from a mismatched IP address.
+
+### The Solution: Synthetic Data to XGBoost Model
+Because a post-quantum cloud storage attack dataset doesn't publicly exist, we **synthetically generated 10,000 access logs** using `generate_dataset.py`.
+
+#### Features Extracted (The 20 Input Vectors)
+We capture 20 pieces of metadata about every single API request, including:
+- **Temporal Context:** Hour of day, weekend vs. weekday.
+- **Location Context:** IP Mismatch (did the country change suddenly?), Geo-Velocity (km/h between logins—catching impossible travel).
+- **Volume Context:** `log(bytes_transferred)`, download counts in the last 1 hour.
+- **Session/Auth Context:** failed logins, session duration.
+
+#### The Model: XGBoost Binary Classifier
+We originally planned an Isolation Forest, but since we had the ability to label our synthetic data (`1` = Attack, `0` = Normal), we switched to **XGBoost (eXtreme Gradient Boosting)**.
+
+- **Why XGBoost?** It is an ensemble of decision trees. It is currently the state-of-the-art for tabular data (like CSV logs). It handles class imbalance (only 8% of our data are actual attacks) perfectly using **SMOTE** (Synthetic Minority Over-sampling Technique), which mathematically generates extra training examples for the minority class.
+- **Output:** It doesn't just say "Yes/No". It outputs a probability (`0.00` to `1.00`). A `0.98` means the model is 98% certain this is a Harvesting Attack, Credential Stuffing, or Insider Exfiltration.
+
+---
+
+## 🔐 3. The Cryptography (Post-Quantum)
+
+This is the main selling point of the security architecture.
+
+### Why standard encryption isn't enough
+Normally, cloud storage encrypts data with AES-256. The AES key is then encrypted with RSA-2048 and sent to the server. A quantum computer running Shor's Algorithm will easily factor the primes of RSA-2048 to unlock the AES key, therefore unlocking the file.
+
+### Hybrid Quantum-Resilient Architecture
+ShieldCloud uses two algorithms in tandem:
+1. **AES-256-GCM:** Used to encrypt the physical file bytes. (Symmetric encryption is generally considered quantum-safe if the key size is 256 bits).
+2. **CRYSTALS-Kyber (ML-KEM-1024):** This is the NIST-approved Post-Quantum Key Encapsulation Mechanism (KEM). It uses Lattice-based cryptography. It is mathematically immune to Shor's Algorithm. We use it to securely wrap and protect our AES-256 key.
+
+**The Workflow on Upload:**
+1. Generate `AES_KEY` -> Encrypt file -> Yields `FILE_CIPHERTEXT`
+2. Generate `KYBER_KEYPAIR`
+3. Encrypt `AES_KEY` with Kyber -> Yields `KYBER_CIPHERTEXT`
+4. Store `FILE_CIPHERTEXT` in MinIO.
+5. Store `KYBER_CIPHERTEXT` in PostgreSQL.
+
+---
+
+## 🔄 4. The Self-Healing Mechanism (The "Auto-Immune Response")
+
+This is where the entire system comes together. The question is: *What do we do when the ML Model detects a 0.98 probability of an attack in progress?*
+
+1. **Trigger:** The Dashboard user clicks "Inject Harvesting Attack", pushing a fake, massively-anomalous payload to the Risk Engine.
+2. **Detection:** The Risk Engine hits the Anomaly ML Service. XGBoost evaluates the payload and returns `{"anomaly_score": 0.98, "is_anomaly": true, "attack_type": "HNDL"}`.
+3. **Escalation:** The Risk Engine calculates the threshold, marks the user `CRITICAL`, and publishes a `risk.high` message to RabbitMQ.
+4. **Action:** The `self-healing-service` consumer pulls the message and triggers an HTTP call to the Encryption Service.
+5. **Mutation (The Healing):** The Encryption Service locks the account and loops over every single file the user owns.
+    - It downloads the file from MinIO.
+    - Decrypts it using the compromised keys.
+    - Generates a **brand new Kyber-1024 Keypair**.
+    - Generates a **brand new AES-256 Key**.
+    - Re-encrypts the file.
+    - Re-uploads it, overwriting the compromised blob.
+    - Updates the database signatures.
+
+By the time the hacker finishes downloading the encrypted blobs, the keys they were intending to harvest have already been mathematically destroyed and rotated out.
+
+---
+
+## 🎨 5. The Demo Setup (How to present this)
+
+When giving your presentation, use the `start.ps1` script to boot the environment. 
+
+1. **Show the Vault:** Open `http://localhost:5173`. Show them the secure files listed. Click the `</>` icon next to a file to show them the massive lattice-based PostgreSQL Kyber Keys live in the DB.
+2. **Explain the Chart:** Point to the Anomaly chart resting at ~0.10. Explain that XGBoost is evaluating traffic in real-time.
+3. **The Attack:** Click the "Inject Harvesting Attack" button.
+4. **The Response:** 
+   - Point out the chart spiking to 0.98 (CRITICAL).
+   - Point out the yellow "Self-Healing Active" spinner.
+   - Explain that RabbitMQ just routed a message to the autonomous worker, bypassing human administrators entirely.
+5. **The Audit Log:** Once complete, a massive modal drops down. Show the audience the exact hex differences between the OLD Kyber Key and the NEW Kyber Key. Explain that the hacker is now uselessly downloading obsolete ciphertext.
+
+---
+
+## 📈 Future Expansions (To mention if asked)
+- **Federated Learning:** We could train the XGBoost model on encrypted telemetry from multiple clients simultaneously without exposing PII.
+- **FIDO2 WebAuthn:** We currently use JWTs. Next step is hardware passkeys bound to the post-quantum keys.
+- **Dilithium:** We currently use Kyber for Encapsulation. We could implement CRYSTALS-Dilithium for Digital Signatures to verify file integrity.
+
+
+
+
+✅ Phase 2 — Complete Summary
+1. Native ML Attack Triggering (No Fake Buttons)
+Every time you click Download on a file, the encryption-service now silently POSTs live telemetry (bytes transferred, download count) to the Risk Engine.
+The Risk Engine uses Redis to accumulate a rolling 1-hour download counter. After ~5 downloads, download_count_last_1h will push the XGBoost score past 0.90 CRITICAL automatically.
+Demo: Just rapidly click Download on all your files — the chart will climb organically until it hits CRITICAL and self-healing fires on its own!
+2. Attacker Force-Logout
+When the ML hits CRITICAL, the Risk Engine fires socket.emit('account_isolated', ...) to every connected browser.
+A dramatic "Session Terminated" modal appears showing the ML score, the reason, and the action taken.
+After 8 seconds, localStorage is cleared and the attacker is forcibly redirected to /login.
+3. Email Notification Service
+The notification-service is now a fully working RabbitMQ consumer.
+When risk.high is published, it auto-generates a rich HTML security email and sends it via mock SMTP.
+A clickable preview URL prints to the terminal so you can show the judges the exact email in a browser without needing any real email credentials.
+4. Public Hosting (ngrok)
+Run winget install ngrok once, and from then on start.ps1 auto-detects ngrok, creates a public tunnel, and prints the live HTTPS URL to the console. Open it on your phone over 4G and the entire system wor

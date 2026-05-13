@@ -1,0 +1,16 @@
+{
+  "name": "shieldcloud-mobile",
+  "version": "1.0.0",
+  "private": true,
+  "scripts": {
+    "start": "expo start",
+    "android": "expo start --android",
+    "ios": "expo start --ios"
+  },
+  "dependencies": {
+    "expo": "~49.0.15",
+    "react": "18.2.0",
+    "react-native": "0.72.6",
+    "react-native-encrypted-storage": "^4.0.3"
+  }
+}

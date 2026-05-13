@@ -1,0 +1,8 @@
+fastapi[standard]
+uvicorn
+celery
+redis
+cryptography
+pydantic
+boto3
+psycopg2-binary

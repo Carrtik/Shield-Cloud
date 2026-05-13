@@ -1,0 +1,38 @@
+{
+  "feature_cols": [
+    "hour_of_day",
+    "is_weekend",
+    "ip_location_mismatch",
+    "geo_velocity_kmh",
+    "unique_ips_last_24h",
+    "download_count_last_1h",
+    "upload_count_last_1h",
+    "log_bytes",
+    "log_fsize",
+    "failed_logins_last_1h",
+    "failed_logins_last_24h",
+    "session_duration_min",
+    "time_since_last_login_h",
+    "file_type_risk_score",
+    "request_rate_per_min",
+    "tor_exit_node",
+    "vpn_detected",
+    "user_agent_anomaly",
+    "act_login",
+    "act_upload",
+    "act_download",
+    "act_list",
+    "act_delete",
+    "act_share"
+  ],
+  "expected_action_cols": [
+    "act_login",
+    "act_upload",
+    "act_download",
+    "act_list",
+    "act_delete",
+    "act_share"
+  ],
+  "version": "2.0-xgboost",
+  "roc_auc": 1.0
+}

@@ -1,0 +1,8 @@
+fastapi[standard]
+uvicorn
+celery
+redis
+psycopg2-binary
+sqlalchemy
+pika
+httpx

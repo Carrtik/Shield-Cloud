@@ -1,0 +1,95 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
+@import "tailwindcss";
+
+@theme {
+  --color-background: #0B0F19;
+  --color-surface: #1A233A;
+  --color-surfaceHighlight: #2A344A;
+  --color-primary: #3B82F6;
+  --color-primaryHover: #2563EB;
+  --color-accent: #10B981;
+  --color-warning: #F59E0B;
+  --color-danger: #EF4444;
+}
+
+@layer base {
+  body {
+    @apply bg-background text-gray-100 font-sans antialiased selection:bg-primary/30 min-h-screen;
+    background-image: 
+      radial-gradient(circle at 15% 50%, rgba(59, 130, 246, 0.15) 0%, transparent 50%),
+      radial-gradient(circle at 85% 30%, rgba(16, 185, 129, 0.15) 0%, transparent 50%);
+    background-attachment: fixed;
+  }
+}
+
+@layer components {
+  .glass-panel {
+    @apply bg-surface/60 backdrop-blur-xl border border-white/10 shadow-2xl;
+  }
+  
+  .glass-card {
+    @apply bg-surfaceHighlight/50 backdrop-blur-md rounded-2xl border border-white/5 transition-all duration-300 hover:border-white/10 hover:shadow-[0_8px_30px_rgb(0,0,0,0.12)];
+  }
+
+  .btn-primary {
+    @apply px-4 py-2 bg-primary hover:bg-primaryHover text-white rounded-lg font-medium transition-all duration-200 active:scale-95 shadow-[0_0_15px_rgba(59,130,246,0.5)] hover:shadow-[0_0_25px_rgba(59,130,246,0.6)];
+  }
+
+  .btn-secondary {
+    @apply px-4 py-2 bg-surfaceHighlight hover:bg-white/10 text-white rounded-lg font-medium transition-all duration-200 active:scale-95 border border-white/5;
+  }
+  
+  .input-field {
+    @apply w-full px-4 py-3 bg-surfaceHighlight/50 border border-white/10 rounded-xl focus:outline-none focus:ring-2 focus:ring-primary/50 focus:border-transparent text-white placeholder-gray-400 transition-all duration-200;
+  }
+}
+
+/* Custom scrollbar */
+::-webkit-scrollbar { width: 6px; height: 6px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.1); border-radius: 9999px; }
+::-webkit-scrollbar-thumb:hover { background: rgba(255,255,255,0.2); }
+
+/* Animate-in utilities (Tailwind v4 fallback) */
+@keyframes fade-in { from { opacity: 0; } to { opacity: 1; } }
+@keyframes slide-in-from-bottom { from { transform: translateY(1rem); opacity: 0; } to { transform: translateY(0); opacity: 1; } }
+@keyframes slide-in-from-right { from { transform: translateX(1rem); opacity: 0; } to { transform: translateX(0); opacity: 1; } }
+
+.animate-in.fade-in { animation: fade-in 0.4s ease both; }
+.animate-in.slide-in-from-bottom-4 { animation: slide-in-from-bottom 0.5s ease both; }
+.animate-in.slide-in-from-right-4 { animation: slide-in-from-right 0.3s ease both; }
+.duration-300 { animation-duration: 0.3s; }
+.duration-700 { animation-duration: 0.7s; }
+
+/* ── Mobile Responsive Overrides ───────────────────────────────────────── */
+
+/* Prevent iOS font size inflation */
+html { -webkit-text-size-adjust: 100%; text-size-adjust: 100%; }
+
+/* Safe area padding for notched phones */
+body { padding-bottom: env(safe-area-inset-bottom, 0px); }
+
+/* Tappable minimum hit areas */
+button, a { min-height: 40px; }
+
+/* On small screens, collapse 3+ column grids to 1 or 2 */
+@media (max-width: 640px) {
+  .grid.grid-cols-3 { grid-template-columns: repeat(2, 1fr) !important; }
+  .grid.grid-cols-4 { grid-template-columns: repeat(2, 1fr) !important; }
+
+  /* Page headings shrink */
+  h1 { font-size: 1.5rem !important; }
+
+  /* Cards get tighter padding */
+  .glass-card { border-radius: 1rem; }
+
+  /* Hide wide table columns that overflow */
+  .hidden-mobile { display: none !important; }
+}
+
+@media (max-width: 480px) {
+  .grid.grid-cols-2 { grid-template-columns: 1fr !important; }
+  .grid.grid-cols-3 { grid-template-columns: 1fr !important; }
+  .grid.grid-cols-4 { grid-template-columns: 1fr !important; }
+}
+

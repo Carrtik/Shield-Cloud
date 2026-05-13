@@ -1,0 +1,46 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: encryption-service
+  namespace: shieldcloud
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: encryption-service
+  template:
+    metadata:
+      labels:
+        app: encryption-service
+    spec:
+      containers:
+      - name: encryption-service
+        image: shieldcloud/encryption-service:latest
+        imagePullPolicy: IfNotPresent
+        ports:
+        - containerPort: 3002
+        env:
+        - name: MINIO_ENDPOINT
+          value: "minio-service:9000"
+        envFrom:
+        - secretRef:
+            name: shieldcloud-secrets
+        resources:
+          requests:
+            memory: "512Mi"
+            cpu: "500m"
+          limits:
+            memory: "2Gi" # PQ Crypto requires memory
+            cpu: "2"
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: encryption-service
+  namespace: shieldcloud
+spec:
+  selector:
+    app: encryption-service
+  ports:
+  - port: 3002
+    targetPort: 3002
