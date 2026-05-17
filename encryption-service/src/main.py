@@ -87,15 +87,29 @@ async def decrypt_and_download(file_id: str, background_tasks: BackgroundTasks, 
     conn2.close()
 
     if not key_row or not key_row[0]:
-        return {"error": "Private key not found. Re-upload this file."}
-
-    priv_key = base64.b64decode(key_row[0])
-
-    # ── Recover AES key via Kyber decapsulation — key never read from DB ─────
-    try:
-        aes_key = decapsulate_to_aes_key(priv_key, kyber_ciphertext_b64)
-    except Exception as e:
-        return {"error": f"Kyber decapsulation failed: {str(e)}"}
+        # ── Migration fallback for pre-fix files ─────────────────────────────
+        # Files uploaded before the Kyber fix have no private key stored.
+        # Fall back to reading encrypted_aes_key directly from files table.
+        conn3 = psycopg2.connect(DATABASE_URL)
+        cur3  = conn3.cursor()
+        cur3.execute(
+            "SELECT encrypted_aes_key FROM files WHERE id = %s",
+            (file_id,)
+        )
+        legacy_row = cur3.fetchone()
+        cur3.close()
+        conn3.close()
+        if legacy_row and legacy_row[0]:
+            aes_key = bytes.fromhex(legacy_row[0])
+        else:
+            return {"error": "No decryption key found. Re-upload this file."}
+    else:
+        # ── Normal post-fix path: recover AES key via Kyber decapsulation ────
+        priv_key = base64.b64decode(key_row[0])
+        try:
+            aes_key = decapsulate_to_aes_key(priv_key, kyber_ciphertext_b64)
+        except Exception as e:
+            return {"error": f"Kyber decapsulation failed: {str(e)}"}
 
     # ── Download encrypted blob from MinIO ───────────────────────────────────
     s3 = get_minio_client()
@@ -200,9 +214,25 @@ async def rotate_all_keys(owner_id: str = None):
             conn_k.close()
 
             if not old_key_row or not old_key_row[0]:
-                raise ValueError("Old private key not found in users table")
-
-            old_priv_key = base64.b64decode(old_key_row[0])
+                # ── Migration fallback for pre-fix files ─────────────────────
+                # No private key means this file was encrypted before the fix.
+                # Read the legacy AES key directly from files table.
+                conn_m  = psycopg2.connect(DATABASE_URL)
+                cur_m   = conn_m.cursor()
+                cur_m.execute(
+                    "SELECT encrypted_aes_key FROM files WHERE id = %s",
+                    (file_id,)
+                )
+                legacy_aes = cur_m.fetchone()
+                cur_m.close()
+                conn_m.close()
+                if not legacy_aes or not legacy_aes[0]:
+                    raise ValueError("No legacy AES key found — re-upload this file")
+                old_aes_key = bytes.fromhex(legacy_aes[0])
+            else:
+                old_priv_key = base64.b64decode(old_key_row[0])
+                # Will be used in step 2 below
+                old_aes_key = None
 
             # 1. Download old encrypted blob from MinIO
             tmp_in = os.path.join(tempfile.gettempdir(), f"heal_in_{uuid.uuid4().hex}.bin")
@@ -213,8 +243,9 @@ async def rotate_all_keys(owner_id: str = None):
             finally:
                 if os.path.exists(tmp_in): os.unlink(tmp_in)
 
-            # 2. Recover old AES key via Kyber decapsulation — never from DB
-            old_aes_key = decapsulate_to_aes_key(old_priv_key, old_kyber_ct_b64)
+            # 2. Recover old AES key — via Kyber if post-fix, legacy hex if pre-fix
+            if old_aes_key is None:
+                old_aes_key = decapsulate_to_aes_key(old_priv_key, old_kyber_ct_b64)
 
             # 3. Decrypt plaintext with old AES key
             old_nonce      = old_blob[:12]
