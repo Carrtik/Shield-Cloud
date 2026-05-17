@@ -3,6 +3,8 @@ from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from fastapi.responses import StreamingResponse
 import uuid, io, os, tempfile, logging, psycopg2, httpx
+from src.services.kyber import generate_keypair, encapsulate
+import base64
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -54,7 +56,7 @@ async def decrypt_and_download(file_id: str, background_tasks: BackgroundTasks, 
 
     conn = psycopg2.connect(DATABASE_URL)
     cur = conn.cursor()
-    cur.execute("SELECT minio_bucket, minio_key, encrypted_aes_key, original_name FROM files WHERE id = %s", (file_id,))
+    cur.execute("SELECT minio_bucket, minio_key, encrypted_aes_key, original_name, owner_id FROM files WHERE id = %s", (file_id,))
     record = cur.fetchone()
     cur.close()
     conn.close()
@@ -62,7 +64,7 @@ async def decrypt_and_download(file_id: str, background_tasks: BackgroundTasks, 
     if not record:
         return {"error": "File not found"}
 
-    bucket, minio_key, aes_hex, original_name = record
+    bucket, minio_key, aes_hex, original_name, actual_owner_id = record
 
     if not aes_hex:
         return {"error": "File metadata is incomplete. Re-upload this file."}
@@ -92,7 +94,7 @@ async def decrypt_and_download(file_id: str, background_tasks: BackgroundTasks, 
         try:
             async with httpx.AsyncClient(timeout=2) as client:
                 await client.post(RISK_ENGINE_URL, json={
-                    "user_id": record[0] if record else "unknown",
+                    "user_id": actual_owner_id if actual_owner_id else "unknown",
                     "action_type": "download",
                     "bytes_transferred_last_1h": len(encrypted_blob),
                     "download_count_last_1h": 1,
@@ -183,12 +185,36 @@ async def rotate_all_keys(owner_id: str = None):
             finally:
                 if os.path.exists(tmp_out): os.unlink(tmp_out)
 
-            # 6. Update DB with new keys
+            # 6. Encapsulate new AES key under new Kyber public key
+            new_pub_key_b64 = base64.b64encode(new_pub_key).decode()
+            new_kyber_ct_b64, _ = encapsulate(new_pub_key_b64)
+            new_priv_key_b64 = base64.b64encode(new_priv_key).decode()
+
+            # 7. Update DB with new Kyber ciphertext, AES key, and private key
             conn2 = psycopg2.connect(DATABASE_URL)
             cur2 = conn2.cursor()
             cur2.execute(
-                "UPDATE files SET kyber_ciphertext = %s, encrypted_aes_key = %s WHERE id = %s",
-                (new_pub_key.hex(), new_aes_key.hex(), file_id)
+                "UPDATE files SET kyber_ciphertext = %s, encrypted_aes_key = %s, "
+                "key_version = key_version + 1 WHERE id = %s",
+                (new_kyber_ct_b64, new_aes_key.hex(), file_id)
+            )
+            # Get owner_id for this file to update private key
+            cur2.execute("SELECT owner_id FROM files WHERE id = %s", (file_id,))
+            owner_row = cur2.fetchone()
+            if owner_row:
+                cur2.execute(
+                    "UPDATE users SET kyber_private_key_encrypted = %s WHERE id = %s",
+                    (new_priv_key_b64, owner_row[0])
+                )
+            # Write audit record
+            cur2.execute(
+                """INSERT INTO key_rotation_log 
+                   (id, user_id, file_id, old_key_version, new_key_version, trigger_reason)
+                   VALUES (gen_random_uuid(), %s, %s, 
+                           (SELECT key_version - 1 FROM files WHERE id = %s),
+                           (SELECT key_version FROM files WHERE id = %s),
+                           'ANOMALY_TRIGGERED')""",
+                (owner_row[0] if owner_row else None, file_id, file_id, file_id)
             )
             conn2.commit()
             cur2.close()
