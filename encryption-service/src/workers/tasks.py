@@ -4,7 +4,7 @@ import psycopg2
 import logging
 import base64
 from src.workers.celery_app import celery_app
-from src.services.kyber import generate_keypair
+from src.services.kyber import generate_keypair, encapsulate, decapsulate
 from cryptography.hazmat.primitives.ciphers.aead import AESGCM
 import uuid
 
@@ -44,16 +44,20 @@ def process_encryption(self, file_id: str, owner_id: str, bucket: str, key: str,
     # 1. Decode Buffer
     file_bytes = base64.b64decode(file_buffer_base64)
     
-    # 2. Quantum Key Encapsulation (liboqs bindings mock fallback if cross-compiled)
+    # 2. Generate Kyber-1024 keypair and AES-256 session key
     pub_key, priv_key = generate_keypair()
-    # Assume priv_key acts as our secure seed for the AES key here for simplicity
     aes_key = AESGCM.generate_key(bit_length=256)
     aesgcm = AESGCM(aes_key)
     nonce = os.urandom(12)
-    
-    # 3. Encrypt physical bytes
+
+    # 3. Encrypt file bytes with AES-256-GCM
     ciphertext = aesgcm.encrypt(nonce, file_bytes, None)
     final_blob = nonce + ciphertext
+
+    # 4. Encapsulate the AES key inside Kyber-1024 ciphertext
+    pub_key_b64 = base64.b64encode(pub_key).decode()
+    kyber_ciphertext_b64, _ = encapsulate(pub_key_b64)
+    priv_key_b64 = base64.b64encode(priv_key).decode()
     
     logger.info(f"Uploading AES-encrypted stream to MinIO '{bucket}/{key}'")
     
@@ -79,11 +83,16 @@ def process_encryption(self, file_id: str, owner_id: str, bucket: str, key: str,
         if os.path.exists(tmp_path):
             os.unlink(tmp_path)
     
-    # 4. Save all quantum metadata back to Postgres
-    logger.info(f"Persisting Kyber-1024 signatures to PostgreSQL for file {file_id}")
+    # 5. Persist Kyber ciphertext and AES key to PostgreSQL
+    logger.info(f"Persisting ML-KEM-1024 ciphertext to PostgreSQL for file {file_id}")
     execute_db_query(
         "UPDATE files SET kyber_ciphertext = %s, encrypted_aes_key = %s WHERE id = %s",
-        (pub_key.hex(), aes_key.hex(), file_id)
+        (kyber_ciphertext_b64, aes_key.hex(), file_id)
+    )
+    # Persist private key to users table for future decapsulation
+    execute_db_query(
+        "UPDATE users SET kyber_private_key_encrypted = %s WHERE id = %s",
+        (priv_key_b64, owner_id)
     )
     logger.info(f"Encryption pipeline COMPLETE for file {file_id}")
     
