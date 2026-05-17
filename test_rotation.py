@@ -23,6 +23,4 @@ for entry in data.get("rotation_log", []):
     if entry["status"] == "rotated":
         print("  OLD Kyber:", entry["old_kyber_preview"])
         print("  NEW Kyber:", entry["new_kyber_preview"])
-        print("  OLD AES:  ", entry["old_aes_preview"])
-        print("  NEW AES:  ", entry["new_aes_preview"])
         print("  Keys actually changed:", entry["old_kyber_preview"] != entry["new_kyber_preview"])
