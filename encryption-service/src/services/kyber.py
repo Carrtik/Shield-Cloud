@@ -58,8 +58,7 @@ def decapsulate_to_aes_key(private_key: bytes, ciphertext_b64: str) -> bytes:
     Returns:
         aes_key : bytes — 32-byte AES-256 key recovered via M-LWE decapsulation
     """
-    kem = oqs.KeyEncapsulation(KEM_ALGORITHM)
-    kem.secret_key = private_key
+    kem = oqs.KeyEncapsulation(KEM_ALGORITHM, secret_key=private_key)
     ciphertext     = base64.b64decode(ciphertext_b64)
     shared_secret  = kem.decap_secret(ciphertext)
     kem.free()
@@ -83,9 +82,8 @@ def decapsulate(private_key_b64: str, ciphertext_b64: str) -> bytes:
     Legacy decapsulation interface retained for compatibility.
     Prefer decapsulate_to_aes_key() for all new call sites.
     """
-    kem         = oqs.KeyEncapsulation(KEM_ALGORITHM)
     private_key = base64.b64decode(private_key_b64)
-    kem.secret_key = private_key
+    kem         = oqs.KeyEncapsulation(KEM_ALGORITHM, secret_key=private_key)
     ciphertext  = base64.b64decode(ciphertext_b64)
     shared_secret = kem.decap_secret(ciphertext)
     kem.free()
