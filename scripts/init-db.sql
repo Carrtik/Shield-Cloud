@@ -25,7 +25,7 @@ CREATE TABLE files (
     minio_bucket VARCHAR NOT NULL,
     minio_key VARCHAR NOT NULL,
     size_bytes BIGINT NOT NULL,
-    encrypted_aes_key TEXT,
+    encrypted_aes_key TEXT, -- DEPRECATED: retained for migration of pre-Kyber-fix files only. New files never populate this column.
     kyber_ciphertext VARCHAR(2200),
     kyber_public_key TEXT,
     key_version INTEGER DEFAULT 1,
