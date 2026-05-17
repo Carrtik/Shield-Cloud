@@ -13,14 +13,16 @@ ENCRYPTION_SERVICE_URL = os.environ.get("ENCRYPTION_SERVICE_URL", "http://localh
 
 def trigger_background_reencryption(user_id):
     """
-    Calls the actual encryption service self-healing endpoint to rotate the Kyber and AES keys.
+    Calls the encryption service self-healing endpoint to rotate
+    Kyber-1024 + AES-256-GCM keys for the compromised user only.
     """
-    logger.info(f"Triggering background RE-ENCRYPTION process for user: {user_id}")
+    logger.info(f"Triggering targeted RE-ENCRYPTION for user: {user_id}")
     try:
-        # In a real per-user scenario, we would pass user_id to rotate just their files
-        # For the demo, we rotate the whole vault
-        response = requests.post(f"{ENCRYPTION_SERVICE_URL}/self-heal/rotate-keys", timeout=30)
-        
+        response = requests.post(
+            f"{ENCRYPTION_SERVICE_URL}/self-heal/rotate-keys",
+            params={"owner_id": user_id},
+            timeout=90
+        )
         if response.status_code == 200:
             data = response.json()
             rotated = data.get("files_rotated", 0)
