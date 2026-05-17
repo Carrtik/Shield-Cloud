@@ -3,10 +3,11 @@ import os
 
 try:
     import oqs
-    OQS_AVAILABLE = True
 except ImportError:
-    OQS_AVAILABLE = False
-    print("WARNING: oqs not found, using Mock Kyber1024 for E2E fast testing.")
+    raise RuntimeError(
+        "liboqs is not installed. ML-KEM-1024 is mandatory for Shield Cloud. "
+        "Install it with: pip install liboqs-python"
+    )
 
 # Note: ML-KEM is the standardized name; liboqs might still use its internal names like 'Kyber1024' or 'ML-KEM-1024'
 KEM_ALGORITHM = 'Kyber1024'
