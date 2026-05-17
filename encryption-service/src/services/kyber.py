@@ -13,13 +13,7 @@ except ImportError:
 KEM_ALGORITHM = 'Kyber1024'
 
 def generate_keypair():
-    """Generates a Kyber-1024 public/private keypair."""
-    if not OQS_AVAILABLE:
-        # Generate mock 1184-byte public key and 3168-byte private key for Kyber-1024 simulation
-        pub = os.urandom(1184)
-        priv = os.urandom(3168)
-        return pub, priv
-
+    """Generates a Kyber-1024 public/private keypair using liboqs."""
     kem = oqs.KeyEncapsulation(KEM_ALGORITHM)
     public_key = kem.generate_keypair()
     private_key = kem.export_secret_key()
