@@ -123,23 +123,6 @@ def do_self_heal_and_notify(user_id: str, anomaly_score: float, payload: dict):
     # Publish to risk.heal  → self-healing consumer reads this (key rotation)
     publish_to_rabbitmq(alert, queue="risk.heal")
 
-    def do_self_heal_and_notify(user_id: str, anomaly_score: float, payload: dict):
-    """Fire self-healing and push RabbitMQ alert (runs in background thread)."""
-    alert = {
-        "user_id": user_id,
-        "anomaly_score": anomaly_score,
-        "timestamp": time.time(),
-        "action": payload.get("action_type", "unknown"),
-        "geo_velocity_kmh": payload.get("geo_velocity_kmh", 0),
-        "ip_location_mismatch": payload.get("ip_location_mismatch", 0),
-        "bytes_transferred": payload.get("bytes_transferred_last_1h", 0),
-        "risk_level": "CRITICAL",
-    }
-    # Publish to risk.high → notification service (email + Socket.IO toast)
-    publish_to_rabbitmq(alert, queue="risk.high")
-    # Publish to risk.heal → self-healing worker (targeted key rotation)
-    publish_to_rabbitmq(alert, queue="risk.heal")
-
 @app.post("/ingest")
 async def ingest_event(event: IngestEvent, background_tasks: BackgroundTasks):
     uid = event.user_id
